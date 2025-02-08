@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>player1 CryptoBot Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .chart {
+        margin: 20px 0;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+      }
+      .stat-card {
+        padding: 20px;
+        border-radius: 8px;
+        background: #f5f5f5;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>player1 CryptoBot Dashboard</h1>
+
+      <div class="stats">
+        <div class="stat-card">
+          <h3>Total P&L</h3>
+          <p>{{.TotalPnL}} USDT</p>
+        </div>
+        <div class="stat-card">
+          <h3>Win Rate</h3>
+          <p>{{.WinRate}}%</p>
+        </div>
+        <div class="stat-card">
+          <h3>Total Trades</h3>
+          <p>{{.TotalTrades}}</p>
+        </div>
+      </div>
+
+      <div class="chart">
+        <canvas id="pnlChart"></canvas>
+      </div>
+
+      <div class="actions">
+        <button onclick="exportCSV()">Export CSV</button>
+        <button onclick="exportJSON()">Export JSON</button>
+      </div>
+    </div>
+
+    <script>
+      // Chart initialization
+      const ctx = document.getElementById('pnlChart');
+      new Chart(ctx, {
+          type: 'line',
+          data: {
+              labels: {{.Labels}},
+              datasets: [{
+                  label: 'Cumulative P&L',
+                  data: {{.PnLData}},
+                  borderColor: 'rgb(75, 192, 192)',
+              }]
+          }
+      });
+
+      // Export functions
+      function exportCSV() {
+          window.location.href = '/export/csv';
+      }
+      function exportJSON() {
+          window.location.href = '/export/json';
+      }
+    </script>
+  </body>
+</html>
