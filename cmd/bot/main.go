@@ -83,8 +83,6 @@ func main() {
 				continue
 			}
 
-			log.Debug("Current price for %s: %.2f", pair, price)
-
 			// Analyze market data
 			signal := strategy.Analyze(&models.MarketData{
 				Symbol: pair,
@@ -93,6 +91,9 @@ func main() {
 			})
 
 			if signal != nil {
+				log.Info("🔍 %s Analysis - Price: %.2f USDT, Signal: %s",
+					pair, price, signal.Action)
+
 				// Get current position
 				balances, err := exchange.GetBalance()
 				if err != nil {
@@ -102,19 +103,16 @@ func main() {
 
 				btcBalance := balances["BTC"]
 
-				// Buy when:
-				// 1. We get a BUY signal from strategy
-				// 2. We have enough USDT balance
+				// Buy signal handling
 				if signal.Action == "BUY" {
-					// Get USDT balance instead of BTC
 					usdtBalance := balances["USDT"]
 					if usdtBalance < cfg.MinOrderSize {
-						log.Debug("Insufficient USDT balance for trading")
+						log.Debug("💰 Insufficient USDT balance (%.2f) for trading", usdtBalance)
 						continue
 					}
 
-					log.Info("Placing BUY order - Price: %.2f, Available USDT: %.2f",
-						price, usdtBalance)
+					log.Info("🟢 BUY Signal - %s at %.2f USDT (Balance: %.2f USDT)",
+						pair, price, usdtBalance)
 
 					// Calculate position size based on available USDT and risk management
 					stopLoss := price * 0.995 // 0.5% stop loss
@@ -124,11 +122,21 @@ func main() {
 						continue
 					}
 
-					// Ensure we don't exceed available USDT
+					// Ensure we don't exceed available USDT and respect minimum order size
 					maxQuantity := (usdtBalance * 0.95) / price
 					if quantity > maxQuantity {
 						quantity = maxQuantity
 					}
+
+					// Ensure minimum order size
+					minOrderValue := quantity * price
+					if minOrderValue < cfg.MinOrderSize {
+						log.Debug("💡 Order value (%.2f) below minimum (%.2f), skipping", minOrderValue, cfg.MinOrderSize)
+						continue
+					}
+
+					// Generate position ID for tracking
+					positionID := generateUUID()
 
 					order := &models.Order{
 						Symbol:    signal.Symbol,
@@ -139,21 +147,24 @@ func main() {
 						Timestamp: time.Now(),
 					}
 
+					// Place the buy order
 					if err := exchange.PlaceOrder(order); err != nil {
-						log.Error("Error placing order: %v", err)
+						log.Error("❌ Failed to place BUY order: %v", err)
 						notifier.NotifyError(err)
 						continue
 					}
 
 					// Save trade to database
 					trade := &models.Trade{
-						Symbol:    order.Symbol,
-						Side:      order.Side,
-						Price:     price, // Use the actual price from earlier
-						Quantity:  order.Quantity,
-						Value:     price * order.Quantity, // Calculate using actual price
-						Fee:       price * order.Quantity * 0.001,
-						Timestamp: order.Timestamp,
+						Symbol:     order.Symbol,
+						Side:       order.Side,
+						Price:      price,
+						Quantity:   order.Quantity,
+						Value:      price * order.Quantity,
+						Fee:        price * order.Quantity * 0.001,
+						Timestamp:  order.Timestamp,
+						PositionID: positionID,
+						Status:     "OPEN",
 					}
 
 					if err := exchange.SaveTrade(trade); err != nil {
@@ -161,75 +172,91 @@ func main() {
 						continue
 					}
 
-					// Notify with proper price formatting
-					notifier.NotifyTrade(order.Symbol, order.Side, price, order.Quantity) // Use actual price
+					// Notify about successful buy
+					notifier.NotifyTrade(order.Symbol, order.Side, price, order.Quantity)
 
-					// When placing buy order
-					positionID := generateUUID()
-					trade.PositionID = positionID
-					trade.Status = "OPEN"
+					log.Info("✅ BUY Order Filled - %s: %.8f at %.2f USDT (Total: %.2f USDT)",
+						pair, quantity, price, quantity*price)
 				}
 
-				// Before the sell condition, add:
+				// Sell signal handling
 				lastBuy, err := exchange.GetLastBuyTrade(signal.Symbol)
 				if err != nil {
-					log.Error("Error getting last buy trade: %v", err)
+					if err.Error() != "no previous buy trade found" {
+						log.Error("Error getting last buy trade: %v", err)
+					}
 					continue
 				}
-				potentialProfit := ((price - lastBuy.Price) / lastBuy.Price) * 100
 
-				// Sell when:
-				// 1. We get a SELL signal or meet profit target
-				// 2. We have crypto balance to sell
-				if (signal.Action == "SELL" || potentialProfit >= 2.0) && btcBalance > 0.0001 {
-					log.Info("Placing SELL order - Entry: %.2f, Current: %.2f, Profit: %.2f%%",
-						lastBuy.Price, price, potentialProfit)
+				if lastBuy != nil {
+					potentialProfit := ((price - lastBuy.Price) / lastBuy.Price) * 100
 
-					order := &models.Order{
-						Symbol:    signal.Symbol,
-						Side:      "SELL",
-						Type:      "MARKET",
-						Quantity:  btcBalance,
-						Price:     price,
-						Timestamp: time.Now(),
+					// Sell when:
+					// 1. We get a SELL signal or meet profit target
+					// 2. We have crypto balance to sell
+					if (signal.Action == "SELL" || potentialProfit >= 2.0) && btcBalance > 0.0001 {
+						log.Info("🔴 SELL Signal - %s at %.2f USDT (Entry: %.2f, PnL: %.2f%%)",
+							pair, price, lastBuy.Price, potentialProfit)
+
+						sellQuantity := btcBalance
+
+						// Tiered exit system
+						if potentialProfit >= 5.0 {
+							sellQuantity = btcBalance * 0.5 // Sell 50% at 5% profit
+							log.Info("📈 Taking 50% profit at %.2f%%", potentialProfit)
+						} else if potentialProfit >= 3.0 {
+							sellQuantity = btcBalance * 0.3 // Sell 30% at 3% profit
+							log.Info("📈 Taking 30% profit at %.2f%%", potentialProfit)
+						}
+
+						order := &models.Order{
+							Symbol:    signal.Symbol,
+							Side:      "SELL",
+							Type:      "MARKET",
+							Quantity:  sellQuantity,
+							Price:     price,
+							Timestamp: time.Now(),
+						}
+
+						// Place the sell order
+						if err := exchange.PlaceOrder(order); err != nil {
+							log.Error("❌ Failed to place SELL order: %v", err)
+							notifier.NotifyError(err)
+							continue
+						}
+
+						// Save trade to database with proper position linking
+						sellTrade := &models.Trade{
+							Symbol:     order.Symbol,
+							Side:       order.Side,
+							Price:      price,
+							Quantity:   order.Quantity,
+							Value:      price * order.Quantity,
+							Fee:        price * order.Quantity * 0.001,
+							Timestamp:  order.Timestamp,
+							PositionID: lastBuy.PositionID, // Link to the buy trade
+							Status:     "CLOSED",
+							PnL:        (price - lastBuy.Price) * order.Quantity,
+							PnLPercent: potentialProfit,
+						}
+
+						if err := exchange.SaveTrade(sellTrade); err != nil {
+							log.Error("Error saving trade: %v", err)
+							continue
+						}
+
+						// Notify about successful sell
+						notifier.NotifyTrade(order.Symbol, order.Side, price, order.Quantity)
+
+						log.Info("✅ SELL Order Filled - %s: %.8f at %.2f USDT (PnL: %.2f%%)",
+							pair, order.Quantity, price, potentialProfit)
 					}
-
-					// Tiered exit system
-					if potentialProfit >= 5.0 {
-						order.Quantity = btcBalance * 0.5 // Sell 50% at 5% profit
-					} else if potentialProfit >= 3.0 {
-						order.Quantity = btcBalance * 0.3 // Sell 30% at 3% profit
-					}
-
-					if err := exchange.PlaceOrder(order); err != nil {
-						log.Error("Error placing order: %v", err)
-						notifier.NotifyError(err)
-						continue
-					}
-
-					// When placing sell order
-					sellTrade := &models.Trade{
-						Symbol:    order.Symbol,
-						Side:      order.Side,
-						Price:     price,
-						Quantity:  order.Quantity,
-						Value:     price * order.Quantity,
-						Fee:       price * order.Quantity * 0.001,
-						Timestamp: order.Timestamp,
-					}
-
-					if err := exchange.SaveTrade(sellTrade); err != nil {
-						log.Error("Error saving trade: %v", err)
-						continue
-					}
-
-					sellTrade.PositionID = lastBuy.PositionID
-					sellTrade.Status = "CLOSED"
 				}
 			}
 		}
 
-		time.Sleep(time.Minute) // Adjust frequency as needed
+		// Adjust trading frequency to prevent rapid trades
+		time.Sleep(time.Minute) // Back to 1-minute interval
 	}
 }
 

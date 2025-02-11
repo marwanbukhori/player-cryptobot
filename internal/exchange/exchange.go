@@ -15,4 +15,5 @@ type Exchange interface {
 	GetAllTrades() ([]models.Trade, error)
 	GetRecentTrades(limit int) ([]models.Trade, error)
 	SaveTrade(trade *models.Trade) error
+	GetOpenPositions() ([]models.Trade, error)
 }

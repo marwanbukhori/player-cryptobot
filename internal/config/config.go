@@ -36,7 +36,7 @@ func LoadConfig() (*Config, error) {
 		MaxDrawdown:       getEnvFloatVar("MAX_DRAWDOWN", 0.1),    // 10%
 		RiskPerTrade:      getEnvFloatVar("RISK_PER_TRADE", 0.02), // 2%
 		TradingPairs:      []string{"BTCUSDT"},                    // Updated pairs
-		DatabasePath:      getEnvVar("DB_PATH", "trading_bot.db"),
+		DatabasePath:      getEnvVar("DB_PATH", "data/trading_bot.db"),
 		TelegramToken:     getEnvVar("TELEGRAM_TOKEN", ""),
 		TelegramChatID:    getEnvVar("TELEGRAM_CHAT_ID", ""),
 	}

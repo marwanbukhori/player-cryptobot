@@ -128,45 +128,12 @@ func (b *binanceExchange) GetPrice(symbol string) (float64, error) {
 }
 
 func (b *binanceExchange) PlaceOrder(order *models.Order) error {
-	var log = logrus.New()
-
 	// Get current price for accurate calculations
 	currentPrice, err := b.GetPrice(order.Symbol)
 	if err != nil {
 		return fmt.Errorf("failed to get current price: %v", err)
 	}
 	order.Price = currentPrice // Use actual current price
-
-	// Calculate value before placing order
-	value := order.Price * order.Quantity
-
-	// Create trade record
-	trade := &models.Trade{
-		Symbol:    order.Symbol,
-		Side:      order.Side,
-		Price:     order.Price,
-		Quantity:  order.Quantity,
-		Value:     value,
-		Fee:       value * 0.001, // 0.1% fee
-		Timestamp: time.Now(),
-	}
-
-	// For SELL orders, calculate P&L
-	if order.Side == "SELL" {
-		lastBuy, err := b.GetLastBuyTrade(order.Symbol)
-		if err == nil && lastBuy != nil {
-			// Calculate actual profit/loss
-			buyValue := lastBuy.Price * order.Quantity            // What we paid for current quantity
-			sellValue := order.Price * order.Quantity             // What we got from selling
-			totalFees := (buyValue * 0.001) + (sellValue * 0.001) // Both buy and sell fees
-
-			trade.PnL = sellValue - buyValue - totalFees
-			trade.PnLPercent = (trade.PnL / buyValue) * 100
-
-			log.Infof("Trade details - Buy: %.2f, Sell: %.2f, Fees: %.2f, P&L: %.2f USDT (%.2f%%)",
-				buyValue, sellValue, totalFees, trade.PnL, trade.PnLPercent)
-		}
-	}
 
 	// Place the actual order
 	// Check balance before trading
@@ -208,14 +175,9 @@ func (b *binanceExchange) PlaceOrder(order *models.Order) error {
 		return fmt.Errorf("failed to place spot order: %v", err)
 	}
 
-	// Update order details
+	// Update order details with actual execution price and quantity
 	order.Price, _ = strconv.ParseFloat(result.Price, 64)
 	order.Quantity, _ = strconv.ParseFloat(result.ExecutedQuantity, 64)
-
-	// Save trade to database
-	if err := b.SaveTrade(trade); err != nil {
-		log.Errorf("Failed to save trade: %v", err)
-	}
 
 	return nil
 }
@@ -306,4 +268,8 @@ func (b *binanceExchange) GetRecentTrades(limit int) ([]models.Trade, error) {
 
 func (b *binanceExchange) SaveTrade(trade *models.Trade) error {
 	return b.db.SaveTrade(trade)
+}
+
+func (b *binanceExchange) GetOpenPositions() ([]models.Trade, error) {
+	return b.db.GetOpenPositions()
 }
