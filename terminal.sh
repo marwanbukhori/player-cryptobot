@@ -1,3 +1,5 @@
+# Ignore this. For learning purposes only.
+
 # Create the directory structure
 mkdir -p cmd/bot
 mkdir -p internal/exchange

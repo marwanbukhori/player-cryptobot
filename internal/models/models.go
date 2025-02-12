@@ -10,20 +10,21 @@ type MarketData struct {
 
 type Signal struct {
 	Symbol    string
-	Action    string // "buy" or "sell"
+	Action    string
 	Price     float64
 	Quantity  float64
 	Timestamp time.Time
 }
 
 type Order struct {
-	Symbol    string
-	Side      string // "BUY" or "SELL"
-	Type      string // "MARKET" or "LIMIT"
-	Quantity  float64
-	Price     float64
-	Timestamp time.Time
-	Status    string
+	Symbol        string
+	Side          string
+	Type          string
+	Quantity      float64
+	Price         float64
+	Timestamp     time.Time
+	Status        string
+	StopLossPrice float64
 }
 
 type Kline struct {

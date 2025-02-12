@@ -20,10 +20,14 @@ import (
 )
 
 func main() {
-	// Initialize logger first
+	/*
+	* Initialize logger first
+	 */
 	log := logger.NewLogger()
 
-	// Load configuration
+	/*
+	* Load configuration
+	 */
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Error("Failed to load config: %v", err)
@@ -31,7 +35,9 @@ func main() {
 	}
 	log.Info("Configuration loaded successfully")
 
-	// Initialize database
+	/*
+	* Initialize database
+	 */
 	db, err := database.Initialize(cfg.DatabasePath)
 	if err != nil {
 		log.Error("Failed to initialize database: %v", err)
@@ -39,7 +45,9 @@ func main() {
 	}
 	log.Info("Database initialized successfully")
 
-	// Initialize exchange with the database instance
+	/*
+	* Initialize exchange with the database instance
+	 */
 	exchange, err := exchange.NewExchange(cfg, db)
 	if err != nil {
 		log.Error("Failed to initialize exchange: %v", err)
@@ -47,10 +55,15 @@ func main() {
 	}
 	log.Info("Connected to Binance successfully")
 
-	// Initialize strategy
+	/* Initialize strategy
+	*  Currently using Mean Reversion Strategy
+	*  Can add more in the future
+	 */
 	strategy := strategy.NewMeanReversionStrategy()
 
-	// Initialize risk manager
+	/*
+	* Initialize risk manager
+	 */
 	riskManager := risk.NewRiskManager(
 		cfg.InitialInvestment,
 		cfg.MaxDrawdown,
@@ -59,13 +72,17 @@ func main() {
 		cfg.EnableCompounding,
 	)
 
-	// Initialize telegram notifier
+	/*
+	* Initialize telegram notifier
+	 */
 	notifier := notifications.NewTelegramNotifier(
 		cfg.TelegramToken,
 		cfg.TelegramChatID,
 	)
 
-	// Start web dashboard
+	/*
+	* Start web dashboard
+	 */
 	go func() {
 		server := web.NewServer(exchange, ":8080")
 		if err := server.Start(); err != nil {
@@ -73,7 +90,17 @@ func main() {
 		}
 	}()
 
-	// Start trading loop
+	/* Start Trading Loop
+
+	* What does this do?
+	* - Get the price of the trading pair
+	* - Get the last buy trade
+	* - Get the open position
+	* - Calculate the potential profit
+	* - If the potential profit is less than -5%, set the signal to SELL
+	* - If the signal is SELL, sell the position
+	* - If the signal is BUY, buy the position
+	 */
 	for {
 		for _, pair := range cfg.TradingPairs {
 			price, err := exchange.GetPrice(pair)
@@ -83,27 +110,68 @@ func main() {
 				continue
 			}
 
-			// Analyze market data
-			signal := strategy.Analyze(&models.MarketData{
+			/* What is a signal?
+			* It is a signal that the trading bot will follow
+			* which based on the strategy
+			 */
+			var signal *models.Signal
+
+			/* Get the last buy trade there is no error,
+			calculate the potential profit
+			*/
+			lastBuy, err := exchange.GetOpenPosition(pair)
+			if err == nil && lastBuy != nil {
+
+				/* TODO: Profit Calculation might need to be in a different function
+				to handle more complex calculations
+				*/
+				potentialProfit := ((price - lastBuy.Price) / lastBuy.Price) * 100
+				log.Info("📊 %s Current Price: %.2f | Entry: %.2f | PnL: %.2f%%",
+					pair, price, lastBuy.Price, potentialProfit)
+
+				/*
+				* Emergency sell check
+				* if the potential profit is less than -5%, set the signal to SELL
+				 */
+				if potentialProfit < -5.0 {
+					log.Error("⚠️🔴 Emergency sell at 5%% loss")
+					signal = &models.Signal{
+						Symbol: pair,
+						Action: "SELL",
+					}
+				}
+			}
+
+			/*
+			* Analyze market data
+			 */
+			strategySignal := strategy.Analyze(&models.MarketData{
 				Symbol: pair,
 				Price:  price,
 				Time:   time.Now(),
 			})
 
-			if signal != nil {
+			/* if the strategy signal is not nil, set the signal to the strategy signal
+			* and log the signal
+			 */
+			if strategySignal != nil {
+				signal = strategySignal
 				log.Info("🔍 %s Analysis - Price: %.2f USDT, Signal: %s",
 					pair, price, signal.Action)
 
-				// Get current position
+				/* Get current account balance */
 				balances, err := exchange.GetBalance()
 				if err != nil {
 					log.Error("Error getting balance: %v", err)
 					continue
 				}
 
+				/* Specify what balance */
 				btcBalance := balances["BTC"]
 
-				// Buy signal handling
+				/*
+				* BUY signal handling
+				 */
 				if signal.Action == "BUY" {
 					usdtBalance := balances["USDT"]
 					if usdtBalance < cfg.MinOrderSize {
@@ -114,7 +182,7 @@ func main() {
 					log.Info("🟢 BUY Signal - %s at %.2f USDT (Balance: %.2f USDT)",
 						pair, price, usdtBalance)
 
-					// Calculate position size based on available USDT and risk management
+					/* Calculate position size based on available USDT and risk management */
 					stopLoss := price * 0.995 // 0.5% stop loss
 					quantity, err := riskManager.CalculatePositionSize(price, stopLoss)
 					if err != nil {
@@ -122,20 +190,20 @@ func main() {
 						continue
 					}
 
-					// Ensure we don't exceed available USDT and respect minimum order size
+					/* Ensure we don't exceed available USDT and respect minimum order size */
 					maxQuantity := (usdtBalance * 0.95) / price
 					if quantity > maxQuantity {
 						quantity = maxQuantity
 					}
 
-					// Ensure minimum order size
+					/* Ensure minimum order size */
 					minOrderValue := quantity * price
 					if minOrderValue < cfg.MinOrderSize {
 						log.Debug("💡 Order value (%.2f) below minimum (%.2f), skipping", minOrderValue, cfg.MinOrderSize)
 						continue
 					}
 
-					// Generate position ID for tracking
+					/* Generate position ID for tracking */
 					positionID := generateUUID()
 
 					order := &models.Order{
@@ -147,14 +215,14 @@ func main() {
 						Timestamp: time.Now(),
 					}
 
-					// Place the buy order
+					/* Place the buy order */
 					if err := exchange.PlaceOrder(order); err != nil {
 						log.Error("❌ Failed to place BUY order: %v", err)
 						notifier.NotifyError(err)
 						continue
 					}
 
-					// Save trade to database
+					/* Save trade to database */
 					trade := &models.Trade{
 						Symbol:     order.Symbol,
 						Side:       order.Side,
@@ -172,41 +240,54 @@ func main() {
 						continue
 					}
 
-					// Notify about successful buy
+					/* Notify about successful buy */
 					notifier.NotifyTrade(order.Symbol, order.Side, price, order.Quantity)
 
 					log.Info("✅ BUY Order Filled - %s: %.8f at %.2f USDT (Total: %.2f USDT)",
 						pair, quantity, price, quantity*price)
 				}
 
-				// Sell signal handling
-				lastBuy, err := exchange.GetLastBuyTrade(signal.Symbol)
-				if err != nil {
-					if err.Error() != "no previous buy trade found" {
-						log.Error("Error getting last buy trade: %v", err)
-					}
-					continue
-				}
+				/*
+				* SELL signal handling
+				 */
 
+				/*
+				* If the last buy trade is not nil, calculate the potential profit
+				* and check if the potential profit is less than -8%, set the signal to SELL
+				 */
 				if lastBuy != nil {
 					potentialProfit := ((price - lastBuy.Price) / lastBuy.Price) * 100
 
-					// Sell when:
-					// 1. We get a SELL signal or meet profit target
-					// 2. We have crypto balance to sell
-					if (signal.Action == "SELL" || potentialProfit >= 2.0) && btcBalance > 0.0001 {
+					/* Added protection to sell the position if the potential profit is less than -8% */
+					if potentialProfit < -8.0 {
+						log.Error("⚠️🔴 Emergency sell at 8%% loss")
+						signal.Action = "SELL"
+					}
+
+					/*
+					* Sell when:
+					* 1. We get a SELL signal or meet profit target
+					* 2. We have crypto balance to sell
+					 */
+					if (signal.Action == "SELL" && btcBalance > 0.0001 && potentialProfit >= 0) || potentialProfit >= 2.0 {
 						log.Info("🔴 SELL Signal - %s at %.2f USDT (Entry: %.2f, PnL: %.2f%%)",
 							pair, price, lastBuy.Price, potentialProfit)
 
 						sellQuantity := btcBalance
 
-						// Tiered exit system
+						/*
+						* Tiered exit system
+						* TODO: To verify is this relevant?
+
+						*  - Sell 50% at 5% profit
+						*  - Sell 30% at 3% profit
+						 */
 						if potentialProfit >= 5.0 {
 							sellQuantity = btcBalance * 0.5 // Sell 50% at 5% profit
-							log.Info("📈 Taking 50% profit at %.2f%%", potentialProfit)
+							log.Info("📈 Taking 50%% profit at %.2f%%", potentialProfit)
 						} else if potentialProfit >= 3.0 {
 							sellQuantity = btcBalance * 0.3 // Sell 30% at 3% profit
-							log.Info("📈 Taking 30% profit at %.2f%%", potentialProfit)
+							log.Info("📈 Taking 30%% profit at %.2f%%", potentialProfit)
 						}
 
 						order := &models.Order{
@@ -218,14 +299,19 @@ func main() {
 							Timestamp: time.Now(),
 						}
 
-						// Place the sell order
+						/* Place the sell order */
 						if err := exchange.PlaceOrder(order); err != nil {
 							log.Error("❌ Failed to place SELL order: %v", err)
 							notifier.NotifyError(err)
 							continue
 						}
 
-						// Save trade to database with proper position linking
+						/* Before saving the sell trade, update the original BUY trade status */
+						if err := exchange.UpdateTradeStatus(lastBuy.PositionID, "CLOSED"); err != nil {
+							log.Error("Error closing position: %v", err)
+						}
+
+						/* Save trade to database with proper position linking */
 						sellTrade := &models.Trade{
 							Symbol:     order.Symbol,
 							Side:       order.Side,
@@ -234,7 +320,7 @@ func main() {
 							Value:      price * order.Quantity,
 							Fee:        price * order.Quantity * 0.001,
 							Timestamp:  order.Timestamp,
-							PositionID: lastBuy.PositionID, // Link to the buy trade
+							PositionID: lastBuy.PositionID,
 							Status:     "CLOSED",
 							PnL:        (price - lastBuy.Price) * order.Quantity,
 							PnLPercent: potentialProfit,
@@ -245,7 +331,7 @@ func main() {
 							continue
 						}
 
-						// Notify about successful sell
+						/* Notify about successful sell */
 						notifier.NotifyTrade(order.Symbol, order.Side, price, order.Quantity)
 
 						log.Info("✅ SELL Order Filled - %s: %.8f at %.2f USDT (PnL: %.2f%%)",
@@ -255,11 +341,17 @@ func main() {
 			}
 		}
 
-		// Adjust trading frequency to prevent rapid trades
-		time.Sleep(time.Minute) // Back to 1-minute interval
+		/* Adjust trading frequency to prevent rapid trades
+		* Currently: 10 seconds
+		 */
+		time.Sleep(10 * time.Second)
 	}
 }
 
+/*
+*  TODO: Verify if this is relevant
+*  Print the trading summary
+ */
 func printTradingSummary(exchange exchange.Exchange, log *logger.Logger) {
 	summary, err := exchange.GetTradingSummary()
 	if err != nil {
@@ -278,6 +370,10 @@ func printTradingSummary(exchange exchange.Exchange, log *logger.Logger) {
 	log.Info("Total P&L: $%.2f", totalPnL)
 }
 
+/*
+*  TODO: Verify if this legit
+*  Calculate the realized PnL
+ */
 func CalculateRealizedPnl(exchange exchange.Exchange) (map[string]float64, error) {
 	trades, err := exchange.GetAllTrades()
 	if err != nil {
@@ -293,6 +389,9 @@ func CalculateRealizedPnl(exchange exchange.Exchange) (map[string]float64, error
 	return pnl, nil
 }
 
+/*
+*  Generate a UUID
+ */
 func generateUUID() string {
 	b := make([]byte, 16)
 	_, err := rand.Read(b)

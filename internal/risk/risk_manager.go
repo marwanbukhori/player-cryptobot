@@ -24,12 +24,25 @@ func NewRiskManager(initialBalance, maxDrawdown, riskPerTrade, aggressiveFactor 
 	}
 }
 
+/* Risk Manager is a component that manages the risk of the trading bot
+*  - calculates the position size based on the current balance and the risk per trade
+*  - checks if the balance is below the max drawdown
+*  - updates the balance when a new trade is made
+*  - gets the current balance
+ */
+
+/*
+*  Calculate the position size
+ */
 func (r *RiskManager) CalculatePositionSize(price float64, stopLoss float64) (float64, error) {
-	// Use current balance instead of initial balance
-	riskBase := math.Min(r.currentBalance, r.initialBalance*2) // Cap at 2x initial
+	/*
+	*  Use current balance instead of initial balance
+	*  Cap at 2x initial
+	 */
+	riskBase := math.Min(r.currentBalance, r.initialBalance*2)
 	riskAmount := riskBase * r.riskPerTrade
 
-	// Aggressive sizing during winning streaks
+	/* Aggressive sizing during winning streaks */
 	if r.currentBalance > r.initialBalance {
 		riskAmount *= 1.5 // Risk 3% instead of 2% when profitable
 	}
@@ -37,15 +50,21 @@ func (r *RiskManager) CalculatePositionSize(price float64, stopLoss float64) (fl
 	stopLossDistance := math.Abs(price - stopLoss)
 	quantity := riskAmount / stopLossDistance
 
-	// Dynamic max quantity based on current balance
+	/* Dynamic max quantity based on current balance */
 	maxQuantity := r.currentBalance / price
 	return math.Min(quantity, maxQuantity), nil
 }
 
+/*
+*  Update the balance
+ */
 func (r *RiskManager) UpdateBalance(newBalance float64) {
 	r.currentBalance = newBalance
 }
 
+/*
+*  Check if the balance is below the max drawdown
+ */
 func (r *RiskManager) CheckDrawdown() bool {
 	if r.currentBalance <= 0 {
 		return true
@@ -55,6 +74,9 @@ func (r *RiskManager) CheckDrawdown() bool {
 	return drawdown >= r.maxDrawdown
 }
 
+/*
+*  Get the current balance
+ */
 func (r *RiskManager) GetCurrentBalance() float64 {
 	return r.currentBalance
 }

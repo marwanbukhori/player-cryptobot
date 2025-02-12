@@ -47,6 +47,9 @@ type TradeData struct {
 	Status     string    `json:"status"`
 }
 
+/*
+*  NewServer is a function that creates a new server
+ */
 func NewServer(exchange exchange.Exchange, port string) *Server {
 	funcMap := template.FuncMap{
 		"lower": strings.ToLower,
@@ -66,17 +69,20 @@ func NewServer(exchange exchange.Exchange, port string) *Server {
 	}
 }
 
+/*
+*  Starts the server
+ */
 func (s *Server) Start() error {
-	// Serve static files
+	/* Serve static files */
 	fs := http.FileServer(http.Dir("internal/web/static"))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
 
-	// Add favicon handler
+	/* Add favicon handler */
 	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	// Routes
+	/* Routes */
 	http.HandleFunc("/", s.handleDashboard)
 	http.HandleFunc("/api/trades", s.handleTrades)
 	http.HandleFunc("/api/summary", s.handleSummary)

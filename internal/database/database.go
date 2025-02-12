@@ -15,20 +15,30 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// Database wraps the underlying database connection and provides methods for data access
+/* Database wraps the underlying database connection and provides methods for data access */
 type Database struct {
 	db   *sql.DB
 	gorm *gorm.DB
 }
 
-// Initialize creates a new database connection and sets up the schema
+/*
+Initialize creates a new database connection
+and sets up the schema
+*/
 func Initialize(dsn string) (*Database, error) {
-	// Create data directory if it doesn't exist
+
+	/* Create data directory if it doesn't exist */
 	if err := os.MkdirAll(filepath.Dir(dsn), 0755); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %v", err)
 	}
 
-	// Configure GORM to be less verbose
+	/* Configure GORM to be less verbose
+		 What is GORM?
+	   * GORM is a powerful and flexible ORM library for Go that provides a
+	   * way to interact with databases using an object-oriented approach.
+		 * It allows you to define relationships between tables, perform CRUD operations,
+		 * and handle database migrations.
+	*/
 	gormConfig := &gorm.Config{
 		Logger: logger.New(
 			log.New(io.Discard, "", log.LstdFlags),
@@ -41,30 +51,31 @@ func Initialize(dsn string) (*Database, error) {
 		),
 	}
 
+	/* Open a new database connection */
 	gormDB, err := gorm.Open(sqlite.Open(dsn), gormConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %v", err)
 	}
 
-	// Get the underlying *sql.DB
+	/* Get the underlying *sql.DB */
 	sqlDB, err := gormDB.DB()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get underlying *sql.DB: %v", err)
 	}
 
-	// Create the database instance
+	/* Create the database instance */
 	db := &Database{
 		db:   sqlDB,
 		gorm: gormDB,
 	}
 
-	// Only create table if it doesn't exist
+	/* Only create table if it doesn't exist */
 	if !db.gorm.Migrator().HasTable(&models.Trade{}) {
 		if err := db.gorm.AutoMigrate(&models.Trade{}); err != nil {
 			return nil, fmt.Errorf("failed to create trades table: %v", err)
 		}
 
-		// Create indexes only for new database
+		/* Create indexes only for new database */
 		indexes := []string{
 			"CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp)",
 			"CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol)",
@@ -78,7 +89,7 @@ func Initialize(dsn string) (*Database, error) {
 			}
 		}
 
-		// Create view only for new database
+		/* Create view only for new database */
 		if err := db.gorm.Exec(`
 			CREATE VIEW IF NOT EXISTS trade_summary AS
 			SELECT
@@ -101,19 +112,25 @@ func Initialize(dsn string) (*Database, error) {
 	return db, nil
 }
 
-// backupDatabase creates a backup of the database file
+/* BackupDatabase creates a backup of the database file */
+/*
+* TODO: Implement backup functionality
+* currently backup are not working as intended.
+* before this planned to have backup every 7 days
+ */
+
 func backupDatabase(dbPath string) error {
-	// Create backups directory
+	/* Create backups directory */
 	backupDir := filepath.Join(filepath.Dir(dbPath), "backups")
 	if err := os.MkdirAll(backupDir, 0755); err != nil {
 		return fmt.Errorf("failed to create backup directory: %v", err)
 	}
 
-	// Generate backup filename with timestamp
+	/* Generate backup filename with timestamp */
 	timestamp := time.Now().Format("2006-01-02_15-04-05")
 	backupPath := filepath.Join(backupDir, fmt.Sprintf("trading_bot_%s.db", timestamp))
 
-	// Copy database file
+	/* Copy database file */
 	source, err := os.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open source database: %v", err)
@@ -130,7 +147,7 @@ func backupDatabase(dbPath string) error {
 		return fmt.Errorf("failed to copy database: %v", err)
 	}
 
-	// Clean up old backups (keep last 7 days)
+	/* Clean up old backups (keep last 7 days) */
 	files, err := os.ReadDir(backupDir)
 	if err != nil {
 		return fmt.Errorf("failed to read backup directory: %v", err)
@@ -153,9 +170,13 @@ func backupDatabase(dbPath string) error {
 	return nil
 }
 
-// createViews is now only used for maintenance/updates
+/*
+	createViews is now only used for maintenance/updates
+
+* TODO: to verify the importance of this function
+*/
 func (db *Database) createViews() error {
-	// Only try to update view if trades table exists
+	/* Only try to update view if trades table exists */
 	if db.gorm.Migrator().HasTable("trades") {
 		err := db.gorm.Exec(`
 			CREATE VIEW IF NOT EXISTS trade_summary AS
@@ -180,12 +201,35 @@ func (db *Database) createViews() error {
 	return nil
 }
 
-// SaveTrade saves a trade to the database
+/**
+*
+* All the database Query Functions
+* TODO: To verify each query
+* - SaveTrade
+* - GetTradingSummary
+* - GetLastBuyTrade
+* - GetAllTrades
+* - GetRecentTrades
+* - GetOpenPositions
+* - CalculateOpenPnl
+* - GetTrades
+* - UpdateTradeStatus
+**/
+
+/*
+	SaveTrade
+
+* saves a trade to the database
+*/
 func (db *Database) SaveTrade(trade *models.Trade) error {
 	return db.gorm.Create(trade).Error
 }
 
-// GetTradingSummary returns a summary of all trades
+/*
+	GetTradingSummary
+
+* returns a summary of all trades
+*/
 func (db *Database) GetTradingSummary() ([]models.TradingSummary, error) {
 	var summaries []models.TradingSummary
 	err := db.gorm.Raw(`
@@ -204,7 +248,11 @@ func (db *Database) GetTradingSummary() ([]models.TradingSummary, error) {
 	return summaries, err
 }
 
-// GetLastBuyTrade returns the last buy trade for a given symbol
+/*
+	GetLastBuyTrade
+
+* returns the last buy trade for a given symbol
+*/
 func (db *Database) GetLastBuyTrade(symbol string) (*models.Trade, error) {
 	var trade models.Trade
 	err := db.gorm.Where("symbol = ? AND side = ?", symbol, "BUY").
@@ -219,28 +267,44 @@ func (db *Database) GetLastBuyTrade(symbol string) (*models.Trade, error) {
 	return &trade, nil
 }
 
-// GetAllTrades returns all trades
+/*
+	GetAllTrades
+
+* returns all trades
+*/
 func (db *Database) GetAllTrades() ([]models.Trade, error) {
 	var trades []models.Trade
 	err := db.gorm.Order("timestamp DESC").Find(&trades).Error
 	return trades, err
 }
 
-// GetRecentTrades returns the most recent trades up to the specified limit
+/*
+	GetRecentTrades
+
+* returns the most recent trades up to the specified limit
+*/
 func (db *Database) GetRecentTrades(limit int) ([]models.Trade, error) {
 	var trades []models.Trade
 	err := db.gorm.Order("timestamp DESC").Limit(limit).Find(&trades).Error
 	return trades, err
 }
 
-// GetOpenPositions returns all open positions
+/*
+	GetOpenPositions
+
+* returns all open positions
+*/
 func (db *Database) GetOpenPositions() ([]models.Trade, error) {
 	var trades []models.Trade
 	err := db.gorm.Where("status = ?", "OPEN").Find(&trades).Error
 	return trades, err
 }
 
-// CalculateOpenPnl calculates the unrealized PnL for all open positions
+/*
+	CalculateOpenPnl
+
+* calculates the unrealized PnL for all open positions
+*/
 func (db *Database) CalculateOpenPnl(currentPrice float64) (float64, error) {
 	openPositions, err := db.GetOpenPositions()
 	if err != nil {
@@ -252,4 +316,24 @@ func (db *Database) CalculateOpenPnl(currentPrice float64) (float64, error) {
 		openPnl += (currentPrice - pos.Price) * pos.Quantity
 	}
 	return openPnl, nil
+}
+
+/*
+	GetTrades
+
+* returns all trades for a given symbol
+*/
+func (db *Database) GetTrades(symbol string) ([]*models.Trade, error) {
+	var trades []*models.Trade
+	err := db.gorm.Where("symbol = ?", symbol).Order("timestamp desc").Find(&trades).Error
+	return trades, err
+}
+
+/*
+	UpdateTradeStatus
+
+* updates the status of a trade
+*/
+func (db *Database) UpdateTradeStatus(positionID string, status string) error {
+	return db.gorm.Model(&models.Trade{}).Where("id = ?", positionID).Update("status", status).Error
 }

@@ -12,6 +12,11 @@ type TelegramNotifier struct {
 	enabled bool
 }
 
+/* Telegram Notifier is a component that sends messages to a telegram chat
+*  It sends messages to a telegram chat
+*  It is enabled if the token and chatID are not empty
+ */
+
 func NewTelegramNotifier(token, chatID string) *TelegramNotifier {
 	return &TelegramNotifier{
 		token:   token,
@@ -20,6 +25,10 @@ func NewTelegramNotifier(token, chatID string) *TelegramNotifier {
 	}
 }
 
+/*
+*  Send a message to the telegram chat
+*  It is enabled if the token and chatID are not empty
+ */
 func (t *TelegramNotifier) SendMessage(message string) error {
 	if !t.enabled {
 		return nil
@@ -42,12 +51,22 @@ func (t *TelegramNotifier) SendMessage(message string) error {
 	return nil
 }
 
+/*
+*  Notify a trade
+*  It sends a message to the telegram chat
+*  It is enabled if the token and chatID are not empty
+ */
 func (t *TelegramNotifier) NotifyTrade(symbol, side string, price, quantity float64) error {
 	message := fmt.Sprintf("Trade Executed:\n\nSymbol: %s\nSide: %s\nPrice: %.2f\nQuantity: %.8f",
 		symbol, side, price, quantity)
 	return t.SendMessage(message)
 }
 
+/*
+*  Notify an error
+*  It sends a message to the telegram chat
+*  It is enabled if the token and chatID are not empty
+ */
 func (t *TelegramNotifier) NotifyError(err error) error {
 	message := fmt.Sprintf("⚠️ Error\n\n%v", err)
 	return t.SendMessage(message)
