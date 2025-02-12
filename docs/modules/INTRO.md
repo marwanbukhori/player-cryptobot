@@ -1,25 +1,3 @@
-<think>
-Okay, let's tackle this. The user wants a proper documentation for their trading bot, not just code pasting. They provided a lot of code snippets and logs, so I need to synthesize that into a clear structure.
-
-First, I'll start with an overview to explain the bot's purpose. It's a mean reversion bot using RSI, so I'll mention that. Then, break down the main components: main loop, strategy, order execution, risk management, and database handling.
-
-Next, the core workflow. The main loop runs every 10 seconds, checks prices, and handles signals. I'll outline the buy and sell conditions based on the code. For buying, it's RSI < 40 and position in range < 20%. Selling is RSI > 60, position > 80%, and profit checks. Also, emergency sells at -5% and -8% losses.
-
-Order execution details: how market orders are placed, stop-loss setup, and the recent fix for closing trades by updating the BUY status. I'll reference the relevant code lines without including line numbers.
-
-Risk management is crucial. The tiered exits, position sizing, balance checks, and stop-loss. Need to explain each briefly.
-
-Database schema part: the Trade model fields from the code snippets. They have fields like PositionID, Status, PnL, etc.
-
-Common scenarios with examples will help the user understand real-world operations. Include a normal trade and an emergency sell.
-
-Troubleshooting section based on past errors they encountered, like the invalid stop loss due to price parsing and open positions not closing.
-
-Finally, appendices with key files and glossary terms. Make sure to reference code snippets correctly using start and end lines as instructed.
-
-I need to ensure the documentation flows logically, is easy to follow, and addresses all parts of the bot's operation without just pasting code. Use clear headings, bullet points, and examples. Avoid markdown in the thinking but follow the user's format in the final answer.
-</think>
-
 # CryptoTradingBot Documentation
 
 ## 1. System Overview
